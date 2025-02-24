@@ -40,14 +40,14 @@ def load_model_and_preprocessors():
     
     return model, encoder, scaler, scaler_y, df
 
-# Load the model and preprocessors
+# Load model and preprocessors
 model, encoder, scaler, scaler_y, train_df = load_model_and_preprocessors()
 
-st.title("Tensile Strength vs. Varying Parameter")
+st.title("Tensile Strength vs. Varying Parameter with Noise")
 st.write("""
 Select one parameter to vary and provide fixed values for the remaining five.
 The app will generate a graph showing the predicted tensile strength (using your model) 
-across the values available in the CSV for the chosen variable.
+across the available values in the CSV for the chosen variable.
 """)
 
 # List of all input parameters
@@ -63,7 +63,7 @@ st.subheader("Enter fixed parameter values:")
 
 fixed_values = {}
 
-# For each fixed parameter, display an input widget
+# For each fixed parameter, display an input widget with range restrictions for numeric ones.
 for param in fixed_params:
     if param in ["orientation", "infill_pattern"]:
         # For categorical parameters, get options from the fitted encoder
@@ -73,17 +73,27 @@ for param in fixed_params:
             options = encoder.categories_[1].tolist()
         fixed_values[param] = st.selectbox(f"Select value for {param}:", options)
     else:
-        # For numeric parameters, use a number input with a default (mean value from training data)
-        default_val = float(train_df[param].mean())
-        fixed_values[param] = st.number_input(f"Enter value for {param}:", value=default_val)
+        # For numeric parameters, restrict input to the CSV's range.
+        param_min = float(train_df[param].min())
+        param_max = float(train_df[param].max())
+        param_default = float(train_df[param].mean())
+        # Use a step size based on the parameter (adjust if needed)
+        step_val = 0.01 if param == "layer_thick" else 0.1
+        fixed_values[param] = st.number_input(
+            f"Enter value for {param}:",
+            min_value=param_min,
+            max_value=param_max,
+            value=param_default,
+            step=step_val
+        )
 
 if st.button("Generate Graph"):
-    # Determine values for the variable parameter
+    # Determine values for the variable parameter.
     if var_param not in ["orientation", "infill_pattern"]:
-        # Numeric parameter: use unique sorted values from training data
+        # Numeric parameter: use unique sorted values from training data.
         var_range = np.sort(train_df[var_param].unique())
     else:
-        # Categorical parameter: use all categories from the fitted encoder
+        # Categorical parameter: use all categories from the fitted encoder.
         if var_param == "orientation":
             var_range = encoder.categories_[0].tolist()
         else:
@@ -100,7 +110,7 @@ if st.button("Generate Graph"):
     
     input_df = pd.DataFrame(data)
     
-    # Process the input DataFrame using the same preprocessing as during training.
+    # Preprocess the input DataFrame as during training:
     # 1. One-hot encode the categorical features.
     input_encoded = encoder.transform(input_df[['orientation', 'infill_pattern']])
     odf_input = pd.DataFrame.sparse.from_spmatrix(input_encoded)
@@ -117,12 +127,12 @@ if st.button("Generate Graph"):
     
     # 4. Scale the input data using the fitted scaler.
     scaled_input = scaler.transform(combined_input)
-    # Remove the dummy target column (assumed to be the last column) to obtain the features.
+    # Remove the dummy target column (assumed to be the last column).
     scaled_input = scaled_input[:, :-1]
     
-    # Use the loaded model to predict tensile strength on the scaled input.
+    # Use the model to predict tensile strength on the scaled input.
     pred_scaled = model.predict(scaled_input)
-    # Convert predictions back to the original scale.
+    # Inverse-transform the prediction back to the original scale.
     pred_original = scaler_y.inverse_transform(pred_scaled.reshape(-1, 1))
     
     # Add noise to predictions to create a more natural-looking graph.
